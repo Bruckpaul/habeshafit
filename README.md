@@ -40,3 +40,10 @@ flutter pub get
 
 # Run the app
 flutter run
+
+Group Members
+1. Bersabeh Dawit
+2. Biruk Takele
+3. Bruck Paulos
+4. Filimon Assesfa
+5. Girum Tadesse
