@@ -26,6 +26,13 @@ A beautiful and modern fitness tracking mobile application built with Flutter, m
 - Android Studio or VS Code
 - An Android device or emulator
 
+Group Members
+1. Bersabeh Dawit
+2. Biruk Takele
+3. Bruck Paulos
+4. Filimon Assesfa
+5. Girum Tadesse
+
 ### Installation
 
 ```bash
@@ -41,9 +48,3 @@ flutter pub get
 # Run the app
 flutter run
 
-Group Members
-1. Bersabeh Dawit
-2. Biruk Takele
-3. Bruck Paulos
-4. Filimon Assesfa
-5. Girum Tadesse
