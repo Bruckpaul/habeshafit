@@ -1,188 +1,249 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
-import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import '../providers/data_provider.dart';
+import 'package:provider/provider.dart';
+
+import '../models/profile.dart';
+import '../state/app_state.dart';
+import '../state/coaching_state.dart';
 import '../theme.dart';
-import '../widgets/glass_card.dart';
-import '../models/models.dart';
+import '../util/format.dart';
+import '../widgets/common.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<DataProvider>();
-    final user = provider.user;
+    final state = context.watch<AppState>();
+    final p = context.palette;
+    final prof = state.profile;
+    final name = prof.name.isEmpty ? 'Athlete' : prof.name;
+
     return Scaffold(
-      backgroundColor: AppColors.primaryBackground,
       appBar: AppBar(title: const Text('Profile')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 40),
         children: [
-          Center(
-            child: CircleAvatar(
-              radius: 50,
-              backgroundColor: AppColors.accent,
-              child: CircleAvatar(
-                radius: 47,
-                backgroundColor: AppColors.surface,
-                child: Text(user.name[0].toUpperCase(),
-                    style:
-                        const TextStyle(fontSize: 36, color: AppColors.accent)),
+          AppCard(
+            child: Row(children: [
+              CircleAvatar(
+                radius: 30,
+                backgroundColor: p.accent.withValues(alpha: 0.16),
+                child: Text(name.substring(0, 1).toUpperCase(),
+                    style: TextStyle(color: p.accent, fontSize: 26, fontWeight: FontWeight.w800)),
               ),
-            ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(name, style: context.text.titleLarge),
+                  Text('${prof.goal.label} · ${capitalize(prof.experience)}', style: TextStyle(color: p.textSecondary)),
+                  Text('Member since ${DateFormat('MMM yyyy').format(prof.memberSince)}',
+                      style: TextStyle(color: p.textSecondary, fontSize: 12)),
+                ]),
+              ),
+              IconButton(
+                tooltip: 'Edit name',
+                icon: const Icon(Icons.edit_outlined),
+                onPressed: () async {
+                  final n = await promptText(context, title: 'Your name', initial: prof.name);
+                  if (n != null) await state.updateProfile((x) => x.name = n);
+                },
+              ),
+            ]),
           ),
           const SizedBox(height: 12),
-          Text(user.name,
-              textAlign: TextAlign.center,
-              style:
-                  const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
-          Text('Member since ${DateFormat('MMM y').format(user.memberSince)}',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: AppColors.textSecondary)),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.local_fire_department,
-                  color: AppColors.secondaryAccent),
-              Text(' ${user.streak} day streak',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-              const SizedBox(width: 16),
-              const Text('·'),
-              const SizedBox(width: 16),
-              const Icon(Icons.fitness_center, color: AppColors.accent),
-              Text(' ${user.totalWorkouts} workouts',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-            ],
+          AppCard(
+            child: Row(children: [
+              Expanded(child: Stat('${state.sessions.length}', 'Workouts')),
+              Expanded(child: Stat('${state.streakWeeks} wk', 'Streak')),
+              Expanded(
+                child: Stat(
+                  fmtDuration(state.sessions.fold(Duration.zero, (a, s) => a + s.duration)),
+                  'Time trained',
+                ),
+              ),
+            ]),
           ),
           const SizedBox(height: 24),
-          Text('Challenges', style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 8),
-          ...provider.challenges.map((c) => GlassCard(
-                margin: const EdgeInsets.only(bottom: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(c.name,
-                            style:
-                                const TextStyle(fontWeight: FontWeight.bold)),
-                        Text('${c.daysLeft} days left',
-                            style: TextStyle(color: AppColors.secondaryAccent)),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Text(c.description,
-                        style: TextStyle(
-                            fontSize: 12, color: AppColors.textSecondary)),
-                    const SizedBox(height: 8),
-                    LinearProgressIndicator(
-                      value: c.progress / c.target,
-                      backgroundColor: AppColors.surface,
-                      color: AppColors.accent,
-                    ),
-                    const SizedBox(height: 4),
-                    Text('${c.progress}/${c.target}',
-                        style: const TextStyle(fontSize: 12)),
-                  ],
-                ),
-              )),
-          ElevatedButton.icon(
-            onPressed: () => _joinChallengeSheet(context),
-            icon: const Icon(Icons.add),
-            label: const Text('Join Challenge'),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.secondaryAccent),
-          ),
+          const SectionHeader('Training'),
+          _Group(children: [
+            ListTile(
+              leading: const Icon(Icons.flag_outlined),
+              title: const Text('Goal'),
+              trailing: DropdownButton<TrainingGoal>(
+                value: prof.goal,
+                underline: const SizedBox(),
+                items: [for (final g in TrainingGoal.values) DropdownMenuItem(value: g, child: Text(g.label))],
+                onChanged: (v) => state.updateProfile((x) => x.goal = v!),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.event_repeat),
+              title: const Text('Weekly target'),
+              subtitle: const Text('Training days for the streak'),
+              trailing: DropdownButton<int>(
+                value: prof.weeklyTarget,
+                underline: const SizedBox(),
+                items: [for (var d = 1; d <= 7; d++) DropdownMenuItem(value: d, child: Text('$d days'))],
+                onChanged: (v) => state.updateProfile((x) => x.weeklyTarget = v!),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.timer_outlined),
+              title: const Text('Default rest timer'),
+              subtitle: const Text('For exercises added on the fly'),
+              trailing: DropdownButton<int>(
+                value: prof.defaultRestSeconds,
+                underline: const SizedBox(),
+                items: [for (final s in [30, 60, 90, 120, 180, 240]) DropdownMenuItem(value: s, child: Text(fmtRest(s)))],
+                onChanged: (v) => state.updateProfile((x) => x.defaultRestSeconds = v!),
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.calendar_view_week),
+              title: const Text('Active plan'),
+              subtitle: Text(state.activeRoutine?.name ?? 'None'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => context.go('/routines'),
+            ),
+          ]),
           const SizedBox(height: 24),
-          ListTile(
-            leading: const Icon(Icons.settings),
-            title: const Text('Units (kg/lbs)'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () {},
-          ),
-          ListTile(
-            leading: const Icon(Icons.timer),
-            title: const Text('Rest Timer Default'),
-            trailing: const Text('60s',
-                style: TextStyle(color: AppColors.textSecondary)),
-            onTap: () {},
-          ),
-          SwitchListTile(
-            secondary: const Icon(Icons.notifications),
-            title: const Text('Notifications'),
-            value: true,
-            onChanged: (_) {},
-            activeColor: AppColors.accent,
-          ),
-          ListTile(
-            leading: const Icon(Icons.logout, color: AppColors.error),
-            title: const Text('Log out'),
-            onTap: () {
-              showDialog(
-                context: context,
-                builder: (_) => AlertDialog(
-                  backgroundColor: AppColors.surface,
-                  title: const Text('Log out'),
-                  content: const Text('Are you sure?'),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text('Cancel')),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        context.go('/login');
-                      },
-                      child: const Text('Log out'),
-                    ),
+          const SectionHeader('App'),
+          _Group(children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Row(children: [
+                Icon(Icons.straighten, color: p.textSecondary),
+                const SizedBox(width: 16),
+                const Expanded(child: Text('Units', style: TextStyle(fontSize: 16))),
+                SegmentedButton<WeightUnit>(
+                  segments: const [
+                    ButtonSegment(value: WeightUnit.kg, label: Text('kg')),
+                    ButtonSegment(value: WeightUnit.lb, label: Text('lb')),
                   ],
+                  selected: {prof.unit},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (v) => state.updateProfile((x) => x.unit = v.first),
                 ),
-              );
-            },
+              ]),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+              child: Row(children: [
+                Icon(Icons.dark_mode_outlined, color: p.textSecondary),
+                const SizedBox(width: 16),
+                const Expanded(child: Text('Theme', style: TextStyle(fontSize: 16))),
+                SegmentedButton<ThemeMode>(
+                  segments: const [
+                    ButtonSegment(value: ThemeMode.system, icon: Icon(Icons.brightness_auto, size: 18)),
+                    ButtonSegment(value: ThemeMode.light, icon: Icon(Icons.light_mode, size: 18)),
+                    ButtonSegment(value: ThemeMode.dark, icon: Icon(Icons.dark_mode, size: 18)),
+                  ],
+                  selected: {prof.themeMode},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (v) => state.updateProfile((x) => x.themeMode = v.first),
+                ),
+              ]),
+            ),
+          ]),
+          const SizedBox(height: 24),
+          const SectionHeader('Your data'),
+          _Group(children: [
+            ListTile(
+              leading: const Icon(Icons.upload_outlined),
+              title: const Text('Export backup'),
+              subtitle: const Text('Copies all your data as JSON'),
+              onTap: () async {
+                final json = await state.exportData();
+                await Clipboard.setData(ClipboardData(text: json));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('Backup copied (${(json.length / 1024).toStringAsFixed(0)} KB). Paste it somewhere safe.'),
+                  ));
+                }
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.download_outlined),
+              title: const Text('Restore backup'),
+              subtitle: const Text('Replaces all data on this device'),
+              onTap: () => _restore(context),
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_forever_outlined, color: p.danger),
+              title: Text('Erase all data', style: TextStyle(color: p.danger)),
+              onTap: () async {
+                if (await confirm(context,
+                    title: 'Erase everything?',
+                    message: 'Routines, workouts, measurements and settings will be deleted from this device. Export a backup first if you might need them.',
+                    confirmLabel: 'Erase',
+                    destructive: true)) {
+                  await state.resetAll();
+                  if (context.mounted) await context.read<CoachingState>().resetAll();
+                }
+              },
+            ),
+          ]),
+          const SizedBox(height: 24),
+          Center(
+            child: Text(
+              'HabeshaFit 1.0 · data stored on this device\nExercise data: free-exercise-db (public domain)',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: p.textSecondary, fontSize: 12, height: 1.5),
+            ),
           ),
         ],
       ),
     );
   }
 
-  void _joinChallengeSheet(BuildContext context) {
-    showModalBottomSheet(
+  Future<void> _restore(BuildContext context) async {
+    final ctrl = TextEditingController();
+    final text = await showDialog<String>(
       context: context,
-      backgroundColor: AppColors.surface,
-      builder: (_) => Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Predefined Challenges',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            ListTile(
-              title: const Text('50 Push-ups'),
-              onTap: () {
-                context.read<DataProvider>().joinChallenge(Challenge(
-                      id: 'c_temp',
-                      name: '50 Push-ups',
-                      description: '50 push-ups daily for 30 days',
-                      target: 50,
-                      progress: 0,
-                      daysLeft: 30,
-                    ));
-                Navigator.pop(context);
-              },
-            ),
-            const Divider(),
-            const Text('Create Custom',
-                style: TextStyle(color: AppColors.accent)),
-            // Not fully implemented
-            const SizedBox(height: 20),
-          ],
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restore backup'),
+        content: TextField(
+          controller: ctrl,
+          maxLines: 8,
+          decoration: const InputDecoration(hintText: 'Paste the backup JSON here'),
         ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, ctrl.text), child: const Text('Restore')),
+        ],
       ),
+    );
+    if (text == null || text.trim().isEmpty || !context.mounted) return;
+    try {
+      await context.read<AppState>().importData(text.trim());
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backup restored')));
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('That isn\'t a valid HabeshaFit backup')));
+      }
+    }
+  }
+}
+
+class _Group extends StatelessWidget {
+  final List<Widget> children;
+  const _Group({required this.children});
+
+  @override
+  Widget build(BuildContext context) {
+    return AppCard(
+      padding: EdgeInsets.zero,
+      child: Column(children: [
+        for (final (i, c) in children.indexed) ...[
+          if (i > 0) const Divider(indent: 56),
+          c,
+        ],
+      ]),
     );
   }
 }

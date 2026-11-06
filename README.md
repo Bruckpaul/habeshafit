@@ -1,50 +1,63 @@
 # HabeshaFit 💪
 
-A beautiful and modern fitness tracking mobile application built with Flutter, made for the Habesha community.
+A personal workout tracker built with Flutter for the Habesha community. Plan your split, open the app, and it tells you what to train today.
 
-## ✨ Features
+## ✨ Features (phase 1)
 
-- Exercise library with detailed instructions
-- Progress tracking with charts
-- Workout plans and routines
-- Dark & Light theme support
-- Offline capability
+- **Today's workout**: the Home screen works out today's session from your active routine.
+  - *Fixed weekdays*: each day is pinned to weekdays (Mon = Upper A, Tue = Lower A…).
+  - *Rotation*: days run in a cycle with optional rest slots; a missed day waits for you.
+  - Skip today or swap to another day.
+- **Routine builder**: days, exercises, sets, rep ranges, rest time, target weight and notes, with drag-to-reorder. Starter templates: Upper/Lower, Push/Pull/Legs, Full body.
+- **Exercise library**: 876 exercises with demo images, muscles, equipment and step-by-step instructions, plus your own custom exercises.
+- **Live workout**: each set shows what you lifted last time; ticking an empty set copies it. Includes a rest timer (−15/+15/skip), warm-up/drop/failure sets, a progression hint, and personal-record detection.
+- **Empty workout**: start immediately, add exercises as you go, save it as a routine afterwards.
+- **Progress**: workouts per week vs target, sets per muscle, per-exercise estimated 1RM charts, body weight and measurements.
+- **History**: every workout, editable afterwards.
+- **Offline-first**: all data is stored on the device (sembast: a file on mobile, IndexedDB on web). A workout in progress survives the app closing.
+- **Backup**: export and restore all data as JSON.
+- Light, dark and system themes; kg or lb.
 
-## 🚀 Tech Stack
+## 🚀 Tech stack
 
-- **Flutter** (Dart)
-- **Provider** (State Management)
-- **Go Router** (Navigation)
-- **fl_chart** (Data Visualization)
-- **Lottie** (Animations)
-- **Google Fonts**
+- **Flutter** (Dart 3)
+- **Provider** for state (`lib/state/app_state.dart`)
+- **go_router** for navigation
+- **sembast / sembast_web** for local storage (`lib/data/repository.dart`)
+- **fl_chart** for charts
+- **cached_network_image** for exercise images
 
-## 🛠️ How to Run
+## 🗂️ Project layout
 
-### Prerequisites
-- Flutter installed
-- Android Studio or VS Code
-- An Android device or emulator
+```
+lib/
+  data/        local database + repository (JSON documents)
+  logic/       pure logic: today's plan (schedule.dart), stats/PRs, templates
+  models/      Exercise, Routine, WorkoutSession, UserProfile, Measurement
+  state/       AppState (ChangeNotifier)
+  screens/     UI screens
+  widgets/     shared widgets, workout editor
+assets/exercises.json   exercise library (free-exercise-db, public domain)
+test/          unit tests for schedule, stats and state
+```
 
-Group Members
+## 🛠️ How to run
+
+```bash
+flutter pub get
+flutter run            # Android/iOS device or emulator
+flutter run -d chrome  # web
+flutter test
+```
+
+## Group members
+
 1. Bersabeh Dawit
 2. Biruk Takele
 3. Bruck Paulos
 4. Filimon Assesfa
 5. Girum Tadesse
 
-### Installation
+## Credits
 
-```bash
-# Clone the repo
-git clone https://github.com/Bruckpaul/habeshafit.git
-
-# Go to project folder
-cd habeshafit
-
-# Get dependencies
-flutter pub get
-
-# Run the app
-flutter run
-
+Exercise data and images: [free-exercise-db](https://github.com/yuhonas/free-exercise-db) by yuhonas, released under The Unlicense.

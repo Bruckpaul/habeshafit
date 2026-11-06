@@ -1,113 +1,85 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
+
+import '../state/app_state.dart';
 import '../theme.dart';
+import '../util/format.dart';
 
 class ShellScreen extends StatelessWidget {
-  final Widget child;
-  const ShellScreen({super.key, required this.child});
+  final StatefulNavigationShell shell;
+  const ShellScreen({super.key, required this.shell});
 
   @override
   Widget build(BuildContext context) {
+    final hasActive = context.select<AppState, bool>((s) => s.active != null);
     return Scaffold(
-      body: child,
-      bottomNavigationBar: _BottomNavBar(),
-    );
-  }
-}
-
-class _BottomNavBar extends StatefulWidget {
-  @override
-  State<_BottomNavBar> createState() => _BottomNavBarState();
-}
-
-class _BottomNavBarState extends State<_BottomNavBar> {
-  int _selectedIndex = 0;
-
-  void _onItemTapped(int index) {
-    setState(() => _selectedIndex = index);
-    final routes = ['/home', '/workout', '/progress', '/profile'];
-    if (index < routes.length) {
-      context.go(routes[index]);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 10)
-        ],
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _NavItem(
-              icon: Icons.home,
-              label: 'Home',
-              isSelected: _selectedIndex == 0,
-              onTap: () => _onItemTapped(0)),
-          _NavItem(
-              icon: Icons.fitness_center,
-              label: 'Workout',
-              isSelected: _selectedIndex == 1,
-              onTap: () => _onItemTapped(1)),
-          _NavItem(
-              icon: Icons.show_chart,
-              label: 'Progress',
-              isSelected: _selectedIndex == 2,
-              onTap: () => _onItemTapped(2)),
-          _NavItem(
-              icon: Icons.person,
-              label: 'Profile',
-              isSelected: _selectedIndex == 3,
-              onTap: () => _onItemTapped(3)),
-        ],
-      ),
-    );
-  }
-}
-
-class _NavItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool isSelected;
-  final VoidCallback onTap;
-  const _NavItem(
-      {required this.icon,
-      required this.label,
-      required this.isSelected,
-      required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-        decoration: isSelected
-            ? BoxDecoration(
-                color: AppColors.accent.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(20),
-              )
-            : null,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                color: isSelected ? AppColors.accent : AppColors.textSecondary,
-                size: 24),
-            const SizedBox(height: 2),
-            Text(label,
-                style: TextStyle(
-                    fontSize: 10,
-                    color: isSelected
-                        ? AppColors.accent
-                        : AppColors.textSecondary)),
+      body: shell,
+      bottomNavigationBar: Column(mainAxisSize: MainAxisSize.min, children: [
+        if (hasActive) const _ResumeBar(),
+        NavigationBar(
+          selectedIndex: shell.currentIndex,
+          onDestinationSelected: (i) => shell.goBranch(i, initialLocation: i == shell.currentIndex),
+          destinations: const [
+            NavigationDestination(icon: Icon(Icons.home_outlined), selectedIcon: Icon(Icons.home_rounded), label: 'Home'),
+            NavigationDestination(
+                icon: Icon(Icons.fitness_center_outlined), selectedIcon: Icon(Icons.fitness_center), label: 'Workouts'),
+            NavigationDestination(
+                icon: Icon(Icons.sports_outlined), selectedIcon: Icon(Icons.sports), label: 'Coach'),
+            NavigationDestination(
+                icon: Icon(Icons.insights_outlined), selectedIcon: Icon(Icons.insights), label: 'Progress'),
+            NavigationDestination(
+                icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Profile'),
           ],
+        ),
+      ]),
+    );
+  }
+}
+
+/// "Workout in progress" strip above the navigation bar.
+class _ResumeBar extends StatefulWidget {
+  const _ResumeBar();
+  @override
+  State<_ResumeBar> createState() => _ResumeBarState();
+}
+
+class _ResumeBarState extends State<_ResumeBar> {
+  late final Timer _t = Timer.periodic(const Duration(seconds: 1), (_) => setState(() {}));
+
+  @override
+  void dispose() {
+    _t.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.palette;
+    final s = context.watch<AppState>().active;
+    if (s == null) return const SizedBox.shrink();
+    return Material(
+      color: p.accent,
+      child: InkWell(
+        onTap: () => context.push('/workout'),
+        child: SafeArea(
+          top: false,
+          bottom: false,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            child: Row(children: [
+              Icon(Icons.timer_outlined, color: p.onAccent, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('${s.name} · ${fmtClock(s.duration)}',
+                    style: TextStyle(color: p.onAccent, fontWeight: FontWeight.w700), overflow: TextOverflow.ellipsis),
+              ),
+              Text('Resume', style: TextStyle(color: p.onAccent, fontWeight: FontWeight.w800)),
+              Icon(Icons.chevron_right, color: p.onAccent),
+            ]),
+          ),
         ),
       ),
     );

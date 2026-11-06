@@ -1,0 +1,3 @@
+Exercise data and images: free-exercise-db by yuhonas
+https://github.com/yuhonas/free-exercise-db
+Released under The Unlicense (public domain dedication).
