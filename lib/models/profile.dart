@@ -52,6 +52,15 @@ class UserProfile {
   /// Per-date override of today's plan: day id, or 'rest' to skip.
   Map<String, String> dayOverrides;
 
+  /// Daily "today's workout" reminder, minutes after midnight; null = off.
+  int? dailyReminderMinutes;
+
+  /// Phone alert when the rest timer ends.
+  bool restAlerts;
+
+  /// Whether the OS notification permission was already requested.
+  bool notificationsAsked;
+
   UserProfile({
     this.name = '',
     this.goal = TrainingGoal.muscle,
@@ -64,6 +73,9 @@ class UserProfile {
     this.onboardingComplete = false,
     DateTime? memberSince,
     Map<String, String>? dayOverrides,
+    this.dailyReminderMinutes,
+    this.restAlerts = true,
+    this.notificationsAsked = false,
   })  : memberSince = memberSince ?? DateTime.now(),
         dayOverrides = dayOverrides ?? {};
 
@@ -82,6 +94,9 @@ class UserProfile {
             : DateTime.parse(j['memberSince'] as String),
         dayOverrides: Map<String, String>.from(
             (j['dayOverrides'] as Map?) ?? const <String, String>{}),
+        dailyReminderMinutes: (j['dailyReminderMinutes'] as num?)?.toInt(),
+        restAlerts: (j['restAlerts'] as bool?) ?? true,
+        notificationsAsked: (j['notificationsAsked'] as bool?) ?? false,
       );
 
   Map<String, Object?> toJson() => {
@@ -96,5 +111,8 @@ class UserProfile {
         'onboardingComplete': onboardingComplete,
         'memberSince': memberSince.toIso8601String(),
         'dayOverrides': dayOverrides,
+        'dailyReminderMinutes': dailyReminderMinutes,
+        'restAlerts': restAlerts,
+        'notificationsAsked': notificationsAsked,
       };
 }

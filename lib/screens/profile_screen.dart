@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
 import '../models/profile.dart';
+import '../services/notification_scheduler.dart';
 import '../state/app_state.dart';
 import '../state/coaching_state.dart';
 import '../theme.dart';
@@ -109,6 +110,9 @@ class ProfileScreen extends StatelessWidget {
               onTap: () => context.go('/routines'),
             ),
           ]),
+          const SizedBox(height: 24),
+          const SectionHeader('Notifications'),
+          const _NotificationSettings(),
           const SizedBox(height: 24),
           const SectionHeader('App'),
           _Group(children: [
@@ -218,7 +222,9 @@ class ProfileScreen extends StatelessWidget {
     );
     if (text == null || text.trim().isEmpty || !context.mounted) return;
     try {
+      final coaching = context.read<CoachingState>();
       await context.read<AppState>().importData(text.trim());
+      await coaching.load();
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Backup restored')));
       }
@@ -245,5 +251,66 @@ class _Group extends StatelessWidget {
         ],
       ]),
     );
+  }
+}
+
+
+class _NotificationSettings extends StatelessWidget {
+  const _NotificationSettings();
+
+  String _fmt(int minutes) => DateFormat.jm().format(DateTime(2026, 1, 1).add(Duration(minutes: minutes)));
+
+  @override
+  Widget build(BuildContext context) {
+    final state = context.watch<AppState>();
+    final scheduler = context.read<NotificationScheduler>();
+    final prof = state.profile;
+    final daily = prof.dailyReminderMinutes;
+    return _Group(children: [
+      SwitchListTile(
+        secondary: const Icon(Icons.timer_outlined),
+        title: const Text('Rest timer alert'),
+        subtitle: const Text('Notifies you when rest is over, even with the app closed'),
+        value: prof.restAlerts,
+        onChanged: (v) async {
+          if (v) await scheduler.ensurePermission(force: true);
+          await state.updateProfile((x) => x.restAlerts = v);
+        },
+      ),
+      SwitchListTile(
+        secondary: const Icon(Icons.today_outlined),
+        title: const Text('Daily workout reminder'),
+        subtitle: Text(daily == null ? 'Off' : 'On training days at ${_fmt(daily)}'),
+        value: daily != null,
+        onChanged: (v) async {
+          if (!v) {
+            await state.updateProfile((x) => x.dailyReminderMinutes = null);
+            return;
+          }
+          final t = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 7, minute: 0));
+          if (t == null) return;
+          await scheduler.ensurePermission(force: true);
+          await state.updateProfile((x) => x.dailyReminderMinutes = t.hour * 60 + t.minute);
+        },
+      ),
+      if (daily != null)
+        ListTile(
+          leading: const Icon(Icons.schedule),
+          title: const Text('Reminder time'),
+          trailing: Text(_fmt(daily), style: const TextStyle(fontWeight: FontWeight.w700)),
+          onTap: () async {
+            final t = await showTimePicker(
+              context: context,
+              initialTime: TimeOfDay(hour: daily ~/ 60, minute: daily % 60),
+            );
+            if (t != null) await state.updateProfile((x) => x.dailyReminderMinutes = t.hour * 60 + t.minute);
+          },
+        ),
+      const ListTile(
+        leading: Icon(Icons.sports),
+        title: Text('Coach reminders'),
+        subtitle: Text('Reminders your coach sets are scheduled on this phone automatically'),
+      ),
+    ]);
   }
 }

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../models/routine.dart';
+import '../services/notification_scheduler.dart';
 import '../state/app_state.dart';
 import '../widgets/common.dart';
 
@@ -41,13 +42,18 @@ Future<bool> _clearActive(BuildContext context) async {
 Future<void> startRoutineDay(BuildContext context, Routine routine, RoutineDay day, {int? slotIndex}) async {
   if (!await _clearActive(context)) return;
   if (!context.mounted) return;
+  final scheduler = context.read<NotificationScheduler>();
   await context.read<AppState>().startRoutineWorkout(routine, day, slotIndex: slotIndex);
   if (context.mounted) context.push('/workout');
+  // First workout: ask for notifications so the rest timer can alert.
+  await scheduler.ensurePermission();
 }
 
 Future<void> startEmpty(BuildContext context) async {
   if (!await _clearActive(context)) return;
   if (!context.mounted) return;
+  final scheduler = context.read<NotificationScheduler>();
   await context.read<AppState>().startEmptyWorkout();
   if (context.mounted) context.push('/workout');
+  await scheduler.ensurePermission();
 }
