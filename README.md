@@ -15,7 +15,9 @@ A personal workout tracker built with Flutter for the Habesha community. Plan yo
 - **Progress**: workouts per week vs target, sets per muscle, per-exercise estimated 1RM charts, body weight and measurements.
 - **History**: every workout, editable afterwards.
 - **Offline-first**: all data is stored on the device (sembast: a file on mobile, IndexedDB on web). A workout in progress survives the app closing.
-- **Backup**: export and restore all data as JSON.
+- **Notifications** (Android/iOS): rest-timer alert even with the app closed, an optional daily "today's workout" reminder on training days, and your coach's reminders scheduled on the phone.
+- **Coaching** (premium, local for now): approved training centers, coach profiles and directory, client programs, goal board, meal plans, reminders and workout feedback.
+- **Backup**: export and restore all data, including coaching, as JSON.
 - Light, dark and system themes; kg or lb.
 
 ## 🚀 Tech stack

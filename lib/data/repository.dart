@@ -6,6 +6,7 @@ import '../models/exercise.dart';
 import '../models/profile.dart';
 import '../models/routine.dart';
 import '../models/workout.dart';
+import 'coaching_backend.dart' show Collections;
 import 'db_factory_io.dart' if (dart.library.js_interop) 'db_factory_web.dart';
 
 typedef Json = Map<String, Object?>;
@@ -16,7 +17,7 @@ class Repository {
   Repository(this.db);
 
   static const _dbName = 'habeshafit.db';
-  static const schemaVersion = 1;
+  static const schemaVersion = 2;
 
   static Future<Repository> open() async => Repository(await openAppDatabase(_dbName));
 
@@ -25,6 +26,10 @@ class Repository {
   final _measurements = stringMapStoreFactory.store('measurements');
   final _customExercises = stringMapStoreFactory.store('custom_exercises');
   final _meta = stringMapStoreFactory.store('meta');
+
+  /// Coaching collections live in the same database (see LocalCoachingBackend).
+  List<StoreRef<String, Map<String, Object?>>> get _coachingStores =>
+      [for (final c in Collections.all) stringMapStoreFactory.store('coaching_$c')];
 
   static Json _copy(Object? v) => Map<String, Object?>.from(
       jsonDecode(jsonEncode(v)) as Map); // deep, mutable copy
@@ -101,6 +106,12 @@ class Repository {
       'sessions': (await _sessions.find(db)).map((r) => r.value).toList(),
       'measurements': (await _measurements.find(db)).map((r) => r.value).toList(),
       'customExercises': (await _customExercises.find(db)).map((r) => r.value).toList(),
+      'coaching': {
+        for (final (i, store) in _coachingStores.indexed)
+          Collections.all[i]: [
+            for (final r in await store.find(db)) {'key': r.key, 'value': r.value}
+          ],
+      },
     };
     return const JsonEncoder.withIndent(' ').convert(data);
   }
@@ -125,6 +136,15 @@ class Repository {
     final custom = ((decoded['customExercises'] as List?) ?? const [])
         .map((e) => Exercise.fromJson(_copy(e)))
         .toList();
+    final coaching = <int, List<(String, Json)>>{};
+    final rawCoaching = decoded['coaching'];
+    if (rawCoaching is Map) {
+      for (final (i, name) in Collections.all.indexed) {
+        final rows = rawCoaching[name];
+        if (rows is! List) continue;
+        coaching[i] = [for (final r in rows) ((r as Map)['key'] as String, _copy(r['value']))];
+      }
+    }
     final profile = decoded['profile'] == null
         ? null
         : UserProfile.fromJson(_copy(decoded['profile']));
@@ -146,6 +166,17 @@ class Repository {
         await _customExercises.record(e.id).put(txn, e.toJson());
       }
       if (profile != null) await _meta.record('profile').put(txn, profile.toJson());
+      // Older backups have no coaching section: keep current coaching data.
+      if (rawCoaching is Map) {
+        for (final store in _coachingStores) {
+          await store.delete(txn);
+        }
+        for (final e in coaching.entries) {
+          for (final (key, value) in e.value) {
+            await _coachingStores[e.key].record(key).put(txn, value);
+          }
+        }
+      }
     });
   }
 
