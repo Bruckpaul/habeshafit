@@ -13,11 +13,13 @@ dependencies:
   go_router: ^14.2.3
   google_fonts: ^6.2.1
   fl_chart: ^0.68.0
-  lottie: ^3.1.2
   cached_network_image: ^3.3.1
   confetti: ^0.7.0
   intl: ^0.19.0
-  image_picker: ^1.1.2  # only used for placeholder, not fully implemented
+  sembast: ^3.8.7
+  sembast_web: ^2.4.4+1
+  path_provider: ^2.1.6
+  path: ^1.9.1
 
 dev_dependencies:
   flutter_test:

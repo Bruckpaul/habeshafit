@@ -1,306 +1,230 @@
 import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:confetti/confetti.dart';
-import '../providers/data_provider.dart';
+
+import '../state/app_state.dart';
+import '../state/coaching_state.dart';
 import '../theme.dart';
-import '../widgets/glass_card.dart';
-import '../models/models.dart';
+import '../util/format.dart';
+import '../widgets/common.dart';
+import '../widgets/workout_editor.dart';
 
 class ActiveWorkoutScreen extends StatefulWidget {
-  final String routineId;
-  final String dayId;
-
-  const ActiveWorkoutScreen(
-      {super.key, required this.routineId, required this.dayId});
-
+  const ActiveWorkoutScreen({super.key});
   @override
   State<ActiveWorkoutScreen> createState() => _ActiveWorkoutScreenState();
 }
 
 class _ActiveWorkoutScreenState extends State<ActiveWorkoutScreen> {
-  late PageController _pageController;
-  int _currentExerciseIndex = 0;
-  bool _restTimerActive = false;
-  int _restSeconds = 60;
-  Timer? _timer;
-  late ConfettiController _confettiController;
+  Timer? _tick;
+  bool _finishing = false;
 
   @override
   void initState() {
     super.initState();
-    _pageController = PageController();
-    _confettiController =
-        ConfettiController(duration: const Duration(seconds: 3));
-    final provider = context.read<DataProvider>();
-    final routine =
-        provider.routines.firstWhere((r) => r.id == widget.routineId);
-    final day = routine.days.firstWhere((d) => d.id == widget.dayId);
-    provider.startWorkout(routine, day);
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) => _onTick());
+    // A fresh empty workout goes straight to the exercise picker.
+    final s = context.read<AppState>().active;
+    if (s != null && s.exercises.isEmpty && DateTime.now().difference(s.start).inSeconds < 5) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _addExercises());
+    }
   }
 
-  void _startRestTimer() {
-    setState(() => _restTimerActive = true);
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (_restSeconds == 0) {
-        t.cancel();
-        setState(() {
-          _restTimerActive = false;
-          _restSeconds = 60;
-        });
-        return;
-      }
-      setState(() => _restSeconds--);
-    });
+  void _onTick() {
+    if (!mounted) return;
+    final state = context.read<AppState>();
+    final end = state.restEndsAt;
+    if (end != null && !end.isAfter(DateTime.now())) {
+      state.stopRest();
+      HapticFeedback.heavyImpact();
+      SystemSound.play(SystemSoundType.alert);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Rest over. Next set!'), duration: Duration(seconds: 2)),
+      );
+    }
+    setState(() {});
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
-    _pageController.dispose();
-    _confettiController.dispose();
+    _tick?.cancel();
     super.dispose();
   }
 
+  Future<void> _addExercises() async {
+    final ids = await context.push<List<String>>('/exercises/pick');
+    if (ids != null && ids.isNotEmpty && mounted) {
+      await context.read<AppState>().addExercisesToActive(ids);
+    }
+  }
+
+  Future<void> _finish() async {
+    final state = context.read<AppState>();
+    final s = state.active;
+    if (s == null || _finishing) return;
+    final done = s.doneSets;
+    final pending = s.exercises.fold<int>(0, (a, e) => a + e.sets.where((x) => !x.done).length);
+    if (done == 0) {
+      final discard = await confirm(context,
+          title: 'Nothing logged yet',
+          message: 'Tick at least one set to save this workout. Discard it instead?',
+          confirmLabel: 'Discard workout',
+          destructive: true);
+      if (discard) {
+        await state.discardActive();
+        if (mounted) context.pop();
+      }
+      return;
+    }
+    if (pending > 0 &&
+        !await confirm(context,
+            title: 'Finish workout?',
+            message: '$pending unticked set${pending == 1 ? '' : 's'} will not be saved.',
+            confirmLabel: 'Finish')) {
+      return;
+    }
+    if (!mounted) return;
+    _finishing = true;
+    final coaching = context.read<CoachingState>();
+    final saved = await state.finishActive();
+    if (saved != null) await coaching.onWorkoutFinished(saved);
+    if (!mounted) return;
+    if (saved == null) {
+      context.pop();
+    } else {
+      context.pushReplacement('/session/${saved.id}?summary=1');
+    }
+  }
+
+  Future<void> _discard() async {
+    final state = context.read<AppState>();
+    if (await confirm(context,
+        title: 'Discard workout?',
+        message: 'All sets logged in this workout will be lost.',
+        confirmLabel: 'Discard',
+        destructive: true)) {
+      await state.discardActive();
+      if (mounted) context.pop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<DataProvider>();
-    final session = provider.activeSession;
-    if (session == null)
-      return const Scaffold(body: Center(child: Text('No active session')));
-    final day = session.day;
-    final exercises = day.exercises;
-    final currentExercise = exercises[_currentExerciseIndex];
-    final libExercise = provider.exerciseLibrary.firstWhere(
-      (e) => e.id == currentExercise.exerciseId,
-      orElse: () => provider.exerciseLibrary[0],
-    );
-    final loggedSets = session.exerciseLogs[currentExercise.exerciseId] ?? [];
+    final state = context.watch<AppState>();
+    final p = context.palette;
+    final s = state.active;
+    if (s == null) {
+      return Scaffold(
+        appBar: AppBar(),
+        body: EmptyState(
+          icon: Icons.check_circle_outline,
+          title: 'No workout running',
+          message: 'Start one from Home or Workouts.',
+          action: 'Close',
+          onAction: () => context.pop(),
+        ),
+      );
+    }
+    final unit = state.profile.unit;
 
     return Scaffold(
-      backgroundColor: AppColors.primaryBackground,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            PageView.builder(
-              controller: _pageController,
-              itemCount: exercises.length,
-              onPageChanged: (i) => setState(() => _currentExerciseIndex = i),
-              itemBuilder: (_, i) {
-                final exInDay = exercises[i];
-                final exLib = provider.exerciseLibrary.firstWhere(
-                    (e) => e.id == exInDay.exerciseId,
-                    orElse: () => provider.exerciseLibrary[0]);
-                return _ExerciseView(
-                  exercise: exLib,
-                  targetSets: exInDay.targetSets,
-                  loggedSets: loggedSets,
-                  onLogSet: (weight, reps, type) {
-                    provider.logSet(exInDay.exerciseId,
-                        SetLog(weight: weight, reps: reps, type: type));
-                  },
-                );
-              },
-            ),
-            Positioned(
-              bottom: 20,
-              right: 20,
-              child: FloatingActionButton(
-                backgroundColor: _restTimerActive
-                    ? AppColors.secondaryAccent
-                    : AppColors.accent,
-                onPressed: () {
-                  if (!_restTimerActive) {
-                    _startRestTimer();
-                  }
-                },
-                child: _restTimerActive
-                    ? SizedBox(
-                        width: 30,
-                        height: 30,
-                        child: CircularProgressIndicator(
-                          value: 1 - (_restSeconds / 60),
-                          strokeWidth: 3,
-                          color: AppColors.primaryBackground,
-                        ),
-                      )
-                    : const Icon(Icons.timer,
-                        color: AppColors.primaryBackground),
-              ),
-            ),
-            Positioned(
-              bottom: 20,
-              left: 20,
-              child: Row(
-                children: [
-                  OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: AppColors.accent)),
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Finish Exercise'),
-                  ),
-                  const SizedBox(width: 12),
-                  ElevatedButton(
-                    onPressed: () {
-                      provider.finishWorkout();
-                      _confettiController.play();
-                      Future.delayed(const Duration(seconds: 3),
-                          () => Navigator.pop(context));
-                    },
-                    child: const Text('Finish Workout'),
-                  ),
-                ],
-              ),
-            ),
-            Align(
-              alignment: Alignment.topCenter,
-              child: ConfettiWidget(
-                confettiController: _confettiController,
-                blastDirectionality: BlastDirectionality.explosive,
-                colors: [
-                  AppColors.accent,
-                  AppColors.secondaryAccent,
-                  AppColors.success
-                ],
-              ),
-            ),
-          ],
+      appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Minimise',
+          icon: const Icon(Icons.keyboard_arrow_down),
+          onPressed: () => context.pop(),
         ),
+        titleSpacing: 0,
+        title: InkWell(
+          onTap: () async {
+            final n = await promptText(context, title: 'Workout name', initial: s.name);
+            if (n != null) await state.editActive((x) => x.name = n);
+          },
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(s.name, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800), overflow: TextOverflow.ellipsis),
+            Text(fmtClock(s.duration), style: TextStyle(fontSize: 13, color: p.accent, fontWeight: FontWeight.w700)),
+          ]),
+        ),
+        actions: [
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: FilledButton(
+              style: FilledButton.styleFrom(minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 18)),
+              onPressed: _finish,
+              child: const Text('Finish'),
+            ),
+          ),
+        ],
       ),
+      body: WorkoutEditor(
+        session: s,
+        onChanged: () => state.editActive((_) {}),
+        onToggleSet: state.toggleSetDone,
+        onAddExercises: _addExercises,
+        header: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+            child: Row(children: [
+              Expanded(child: Stat(fmtClock(s.duration), 'Duration')),
+              Expanded(child: Stat(fmtVolume(s.volume, unit), 'Volume')),
+              Expanded(child: Stat('${s.doneSets}/${s.totalSets}', 'Sets')),
+            ]),
+          ),
+        ],
+        footer: [
+          const SizedBox(height: 16),
+          TextButton(
+            onPressed: _discard,
+            style: TextButton.styleFrom(foregroundColor: p.danger),
+            child: const Text('Discard workout'),
+          ),
+        ],
+      ),
+      bottomNavigationBar: state.restEndsAt == null ? null : _RestBar(state: state),
     );
   }
 }
 
-class _ExerciseView extends StatefulWidget {
-  final ExerciseLibraryItem exercise;
-  final int targetSets;
-  final List<SetLog> loggedSets;
-  final Function(double weight, int reps, SetType type) onLogSet;
-
-  const _ExerciseView({
-    required this.exercise,
-    required this.targetSets,
-    required this.loggedSets,
-    required this.onLogSet,
-  });
-
-  @override
-  State<_ExerciseView> createState() => _ExerciseViewState();
-}
-
-class _ExerciseViewState extends State<_ExerciseView> {
-  final _weightCtrl = TextEditingController();
-  final _repsCtrl = TextEditingController();
-  SetType _selectedType = SetType.normal;
+class _RestBar extends StatelessWidget {
+  final AppState state;
+  const _RestBar({required this.state});
 
   @override
   Widget build(BuildContext context) {
-    final currentSet = widget.loggedSets.length + 1;
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(widget.exercise.name,
-              style:
-                  const TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 8),
-          Text('Set $currentSet of ${widget.targetSets}',
-              style: TextStyle(fontSize: 18, color: AppColors.accent)),
-          const SizedBox(height: 24),
-          GlassCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text('Previous Performance',
-                    style: TextStyle(fontWeight: FontWeight.bold)),
-                const SizedBox(height: 8),
-                Text('Last session: 80 kg × 8 reps',
-                    style: TextStyle(color: AppColors.textSecondary)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: _weightCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Weight (kg)'),
-                ),
+    final p = context.palette;
+    final left = state.restEndsAt!.difference(DateTime.now());
+    final secs = left.inSeconds.clamp(0, 3600);
+    final frac = state.restTotalSeconds == 0 ? 0.0 : (secs / state.restTotalSeconds).clamp(0.0, 1.0);
+    return Material(
+      color: p.surface,
+      elevation: 8,
+      child: SafeArea(
+        top: false,
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          LinearProgressIndicator(value: frac, minHeight: 4, color: p.accent, backgroundColor: p.surfaceAlt),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+            child: Row(children: [
+              Icon(Icons.timer_outlined, color: p.accent),
+              const SizedBox(width: 8),
+              Text('Rest', style: TextStyle(color: p.textSecondary, fontWeight: FontWeight.w600)),
+              const SizedBox(width: 10),
+              Text(fmtClock(Duration(seconds: secs)),
+                  style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, fontFeatures: [FontFeature.tabularFigures()])),
+              const Spacer(),
+              TextButton(onPressed: () => state.adjustRest(-15), child: const Text('−15')),
+              TextButton(onPressed: () => state.adjustRest(15), child: const Text('+15')),
+              FilledButton(
+                style: FilledButton.styleFrom(minimumSize: const Size(0, 40), padding: const EdgeInsets.symmetric(horizontal: 16)),
+                onPressed: state.stopRest,
+                child: const Text('Skip'),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: TextField(
-                  controller: _repsCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Reps'),
-                ),
-              ),
-            ],
+            ]),
           ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            children: SetType.values.map((type) {
-              final isSelected = _selectedType == type;
-              return FilterChip(
-                label: Text(type.name.toUpperCase()),
-                selected: isSelected,
-                onSelected: (v) => setState(() => _selectedType = type),
-                selectedColor: AppColors.accent.withOpacity(0.3),
-                checkmarkColor: AppColors.accent,
-                backgroundColor: AppColors.surface,
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton.icon(
-              onPressed: () {
-                final weight = double.tryParse(_weightCtrl.text) ?? 0;
-                final reps = int.tryParse(_repsCtrl.text) ?? 0;
-                if (weight > 0 && reps > 0) {
-                  widget.onLogSet(weight, reps, _selectedType);
-                  _weightCtrl.clear();
-                  _repsCtrl.clear();
-                  setState(() {}); // rebuild logged sets
-                }
-              },
-              icon: const Icon(Icons.check),
-              label: const Text('Log Set'),
-            ),
-          ),
-          const SizedBox(height: 12),
-          if (widget.loggedSets.isNotEmpty)
-            Expanded(
-              child: ListView.builder(
-                itemCount: widget.loggedSets.length,
-                itemBuilder: (_, i) {
-                  final set = widget.loggedSets[i];
-                  return Dismissible(
-                    key: ValueKey(i),
-                    onDismissed: (_) {
-                      widget.loggedSets.removeAt(i);
-                      setState(() {});
-                    },
-                    child: ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: AppColors.accent.withOpacity(0.2),
-                        child: Text('${i + 1}'),
-                      ),
-                      title: Text('${set.weight} kg × ${set.reps} reps'),
-                      subtitle: Text(set.type.name,
-                          style: TextStyle(color: AppColors.textSecondary)),
-                    ),
-                  );
-                },
-              ),
-            ),
-        ],
+        ]),
       ),
     );
   }
